@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Free-Placement Tower Defense - Balanced Hard</title>
+<title>Free-Placement Tower Defense</title>
 <style>
   :root { --bg:#111827; --panel:#1f2937; --panel2:#374151; --text:#f9fafb; --muted:#cbd5e1; --accent:#60a5fa; }
   * { box-sizing: border-box; }
@@ -42,7 +42,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div><h1>Free-Placement Tower Defense - Balanced Hard</h1><div class="sub">序盤だけ余裕を持たせ、中盤以降はHard版に近い圧がかかる調整です。</div></div>
+    <div><h1>Free-Placement Tower Defense</h1></div>
     <div class="sub">操作: <kbd>1</kbd>〜<kbd>4</kbd> タワー選択 / <kbd>N</kbd> 次Wave / <kbd>Space</kbd> 一時停止 / <kbd>U</kbd> 強化 / <kbd>S</kbd> 売却</div>
   </header>
   <div class="game">
@@ -56,12 +56,12 @@
       </div>
       <div class="tower-list" id="towerList"></div>
       <div class="controls">
-        <button id="startBtn" class="wide">次の Wave</button><button id="pauseBtn">一時停止</button><button id="speedBtn">速度 x1</button><button id="upgradeBtn">強化</button><button id="sellBtn">売却</button><button id="pathBtn" class="wide">経路表示: ON</button><button id="resetBtn" class="wide">リセット</button>
+        <button id="startBtn" class="wide">次の Wave</button><button id="pauseBtn">一時停止</button><button id="speedBtn">速度 x1</button><button id="upgradeBtn">強化</button><button id="sellBtn">売却</button><button id="volumeBtn">音量: ON</button><button id="pathBtn">経路: ON</button><button id="resetBtn" class="wide">リセット</button>
       </div>
       <div class="info" id="info"></div><div class="msg" id="message"></div>
     </aside>
   </div>
-  <footer>Balanced Hard版: Wave 1〜3は準備しやすく、Wave 4以降は厳しくなります。敵の入口は左、拠点は右。道を完全に塞ぐ配置はできません。装甲敵はダメージを軽減し、再生敵は時間経過で回復します。</footer>
+  <footer>敵の入口は左、拠点は右。道を完全に塞ぐ配置はできません。装甲敵はダメージを軽減し、再生敵は時間経過で回復します。</footer>
 </div>
 <script>
 (() => {
@@ -70,16 +70,156 @@
   const canvas = document.getElementById("gameCanvas"), ctx = canvas.getContext("2d");
   const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
   canvas.width = W * dpr; canvas.height = H * dpr; canvas.style.width = W + "px"; canvas.style.height = H + "px"; ctx.setTransform(dpr,0,0,dpr,0,0);
-  const el = { money:q("money"), lives:q("lives"), wave:q("wave"), score:q("score"), towerList:q("towerList"), startBtn:q("startBtn"), pauseBtn:q("pauseBtn"), speedBtn:q("speedBtn"), upgradeBtn:q("upgradeBtn"), sellBtn:q("sellBtn"), pathBtn:q("pathBtn"), resetBtn:q("resetBtn"), info:q("info"), message:q("message") };
+  const el = { money:q("money"), lives:q("lives"), wave:q("wave"), score:q("score"), towerList:q("towerList"), startBtn:q("startBtn"), pauseBtn:q("pauseBtn"), speedBtn:q("speedBtn"), volumeBtn:q("volumeBtn"), upgradeBtn:q("upgradeBtn"), sellBtn:q("sellBtn"), pathBtn:q("pathBtn"), resetBtn:q("resetBtn"), info:q("info"), message:q("message") };
   function q(id){ return document.getElementById(id); }
+
+  class SoundEffects {
+    constructor() { this.ctx = null; }
+    init() { if(!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+    play(type) {
+      if (state.muted) return;
+      this.init();
+      if (!this.ctx) return;
+      if (this.ctx.state === "suspended") this.ctx.resume();
+      const now = this.ctx.currentTime;
+      switch (type) {
+        case "place": {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.type = "sine"; osc.frequency.setValueAtTime(440, now);
+          osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+          gain.gain.setValueAtTime(0.12, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+          osc.start(now); osc.stop(now + 0.08);
+          break;
+        }
+        case "sell": {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.type = "triangle"; osc.frequency.setValueAtTime(784, now);
+          osc.frequency.exponentialRampToValueAtTime(392, now + 0.12);
+          gain.gain.setValueAtTime(0.12, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+          osc.start(now); osc.stop(now + 0.12);
+          break;
+        }
+        case "upgrade": {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(523.25, now);
+          osc.frequency.setValueAtTime(659.25, now + 0.06);
+          osc.frequency.setValueAtTime(783.99, now + 0.12);
+          osc.frequency.setValueAtTime(1046.50, now + 0.18);
+          gain.gain.setValueAtTime(0.1, now); gain.gain.setValueAtTime(0.1, now + 0.18);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
+          osc.start(now); osc.stop(now + 0.28);
+          break;
+        }
+        case "arrow": {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.type = "triangle"; osc.frequency.setValueAtTime(550, now);
+          osc.frequency.exponentialRampToValueAtTime(150, now + 0.07);
+          gain.gain.setValueAtTime(0.06, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.07);
+          osc.start(now); osc.stop(now + 0.07);
+          break;
+        }
+        case "cannon": {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.type = "sawtooth"; osc.frequency.setValueAtTime(100, now);
+          osc.frequency.exponentialRampToValueAtTime(30, now + 0.22);
+          gain.gain.setValueAtTime(0.18, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+          osc.start(now); osc.stop(now + 0.22);
+          break;
+        }
+        case "frost": {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.type = "sine"; osc.frequency.setValueAtTime(987.77, now);
+          osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.12);
+          gain.gain.setValueAtTime(0.06, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+          osc.start(now); osc.stop(now + 0.12);
+          break;
+        }
+        case "laser": {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.type = "sawtooth"; osc.frequency.setValueAtTime(320, now);
+          osc.frequency.exponentialRampToValueAtTime(60, now + 0.38);
+          gain.gain.setValueAtTime(0.24, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.38);
+          osc.start(now); osc.stop(now + 0.38);
+          break;
+        }
+        case "defeat": {
+          const osc1 = this.ctx.createOscillator(), osc2 = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc1.connect(gain); osc2.connect(gain); gain.connect(this.ctx.destination);
+          osc1.type = "sine"; osc2.type = "sine";
+          osc1.frequency.setValueAtTime(988, now); osc1.frequency.setValueAtTime(1318, now + 0.06);
+          osc2.frequency.setValueAtTime(1175, now); osc2.frequency.setValueAtTime(1568, now + 0.06);
+          gain.gain.setValueAtTime(0.06, now); gain.gain.setValueAtTime(0.06, now + 0.06);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+          osc1.start(now); osc2.start(now); osc1.stop(now + 0.2); osc2.stop(now + 0.2);
+          break;
+        }
+        case "hit": {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.type = "sawtooth"; osc.frequency.setValueAtTime(130, now);
+          osc.frequency.linearRampToValueAtTime(80, now + 0.18);
+          gain.gain.setValueAtTime(0.15, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+          osc.start(now); osc.stop(now + 0.18);
+          break;
+        }
+        case "wavestart": {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(523.25, now);
+          osc.frequency.setValueAtTime(659.25, now + 0.1);
+          osc.frequency.setValueAtTime(523.25, now + 0.2);
+          gain.gain.setValueAtTime(0.08, now); gain.gain.setValueAtTime(0.08, now + 0.2);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.38);
+          osc.start(now); osc.stop(now + 0.38);
+          break;
+        }
+        case "waveclear": {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(523.25, now);
+          osc.frequency.setValueAtTime(659.25, now + 0.08);
+          osc.frequency.setValueAtTime(783.99, now + 0.16);
+          osc.frequency.setValueAtTime(1046.50, now + 0.24);
+          gain.gain.setValueAtTime(0.12, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+          osc.start(now); osc.stop(now + 0.5);
+          break;
+        }
+        case "gameover": {
+          const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(392.00, now);
+          osc.frequency.setValueAtTime(349.23, now + 0.2);
+          osc.frequency.setValueAtTime(311.13, now + 0.4);
+          osc.frequency.setValueAtTime(261.63, now + 0.6);
+          gain.gain.setValueAtTime(0.12, now); gain.gain.setValueAtTime(0.12, now + 0.6);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
+          osc.start(now); osc.stop(now + 1.0);
+          break;
+        }
+      }
+    }
+  }
+  const sfx = new SoundEffects();
+
   const TOWER_TYPES = {
     arrow:{key:"arrow",hotkey:"1",name:"アロー",cost:50,range:112,damage:14,cooldown:.66,projectileSpeed:380,splash:0,color:"#38bdf8",desc:"安価で扱いやすい単体攻撃。序盤の主力。"},
     cannon:{key:"cannon",hotkey:"2",name:"キャノン",cost:90,range:100,damage:27,cooldown:1.35,projectileSpeed:260,splash:42,color:"#fb923c",desc:"着弾地点の周囲に範囲ダメージ。密集に強い。"},
     frost:{key:"frost",hotkey:"3",name:"フロスト",cost:80,range:94,damage:3,cooldown:.86,projectileSpeed:330,splash:0,slow:.55,slowTime:1.30,color:"#a78bfa",desc:"低ダメージだが敵を遅くする。曲がり角付近が有効。"},
-    laser:{key:"laser",hotkey:"4",name:"レーザー",cost:135,range:140,damage:7,cooldown:.18,beam:true,splash:0,color:"#f43f5e",desc:"高速連射の即着弾ビーム。硬い敵に安定。"}
+    laser:{key:"laser",hotkey:"4",name:"レーザー",cost:135,range:180,damage:120,cooldown:2.8,beam:true,splash:0,color:"#f43f5e",desc:"一直線上の敵全員を貫通する極太ビーム。発射に時間がかかるが一撃必殺。"}
   };
   const typeOrder = ["arrow","cannon","frost","laser"], startCell={c:0,r:Math.floor(ROWS/2)}, goalCell={c:COLS-1,r:Math.floor(ROWS/2)};
-  const state = { money:160,lives:14,score:0,wave:0,enemies:[],towers:[],projectiles:[],effects:[],selectedType:"arrow",selectedTower:null,hoverCell:null,globalPath:[],showPath:true,paused:false,gameSpeed:1,waveActive:false,waveToSpawn:0,waveSpawned:0,spawnTimer:0,time:0,gameOver:false,message:"Balanced Hard版です。序盤は少し余裕がありますが、Wave 4以降は急に厳しくなります。" };
+  const state = { money:160,lives:14,score:0,wave:0,enemies:[],towers:[],projectiles:[],effects:[],selectedType:"arrow",selectedTower:null,hoverCell:null,globalPath:[],showPath:true,paused:false,gameSpeed:1,waveActive:false,waveToSpawn:0,waveSpawned:0,spawnTimer:0,time:0,gameOver:false,message:"ゲームを開始しました。タワーを配置して防衛を開始してください。",muted:false };
   const keyOf=(c,r)=>c+","+r, sameCell=(a,b)=>a.c===b.c&&a.r===b.r, centerOf=cell=>({x:cell.c*CELL+CELL/2,y:cell.r*CELL+CELL/2}), inBounds=(c,r)=>c>=0&&r>=0&&c<COLS&&r<ROWS, clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   function cellFromPoint(x,y){return {c:Math.floor(x/CELL),r:Math.floor(y/CELL)};}
   function towerAt(c,r){return state.towers.find(t=>t.c===c&&t.r===r)||null;}
@@ -112,25 +252,95 @@
     for(const e of state.enemies){ if(e.dead) continue; const ec=enemyCell(e); if(ec.c===cell.c&&ec.r===cell.r) return {ok:false,reason:"敵のいるマスには配置できません。"}; if(!findPath(ec,goalCell,extra)) return {ok:false,reason:"現在いる敵が閉じ込められるため配置できません。"}; }
     return {ok:true,reason:""};
   }
-  function getTowerStats(t){ const b=TOWER_TYPES[t.type], lv=t.level-1; return {range:b.range+lv*10,damage:Math.round(b.damage*(1+lv*.42)),cooldown:Math.max(.07,b.cooldown*Math.pow(.88,lv)),projectileSpeed:b.projectileSpeed||0,splash:b.splash?b.splash+lv*5:0,slow:b.slow?Math.max(.34,b.slow-lv*.03):0,slowTime:b.slowTime?b.slowTime+lv*.18:0,beam:!!b.beam,color:b.color}; }
+  function getTowerStats(t){ const b=TOWER_TYPES[t.type], lv=t.level-1; return {range:b.range+lv*15,damage:Math.round(b.damage*Math.pow(1.85,lv)),cooldown:Math.max(.05,b.cooldown*Math.pow(0.78,lv)),projectileSpeed:b.projectileSpeed||0,splash:b.splash?Math.round(b.splash*Math.pow(1.2,lv)):0,slow:b.slow?Math.max(.25,b.slow-lv*.05):0,slowTime:b.slowTime?b.slowTime+lv*.25:0,beam:!!b.beam,color:b.color}; }
   function upgradeCost(t){return Math.floor(TOWER_TYPES[t.type].cost*(1.0+t.level*.65));}
   function sellValue(t){return Math.floor(t.spent*.55);}
   function cryptoRandomId(){ if(window.crypto&&crypto.getRandomValues){const a=new Uint32Array(1);crypto.getRandomValues(a);return String(a[0]);} return String(Math.random()).slice(2); }
-  function placeTower(cell){ const v=canPlace(cell); if(!v.ok){setMessage(v.reason);return false;} const type=TOWER_TYPES[state.selectedType], t={id:cryptoRandomId(),type:type.key,c:cell.c,r:cell.r,level:1,cooldown:0,spent:type.cost}; state.money-=type.cost; state.towers.push(t); state.selectedTower=t; recalcPaths(); setMessage(type.name+"を配置しました。"); updateUI(); return true; }
-  function upgradeSelected(){ const t=state.selectedTower; if(!t) return; if(t.level>=4){setMessage("このタワーは最大レベルです。");return;} const cost=upgradeCost(t); if(state.money<cost){setMessage("強化する資金が足りません。");return;} state.money-=cost; t.spent+=cost; t.level++; setMessage(TOWER_TYPES[t.type].name+"を Lv."+t.level+" に強化しました。"); updateUI(); }
-  function sellSelected(){ const t=state.selectedTower; if(!t) return; state.money+=sellValue(t); state.towers=state.towers.filter(x=>x!==t); state.selectedTower=null; recalcPaths(); setMessage("タワーを売却しました。"); updateUI(); }
-  function startWave(){ if(state.gameOver) return; if(state.waveActive){setMessage("Wave中です。");return;} state.wave++; state.waveActive=true; const earlyRelief=state.wave===1?5:(state.wave===2?3:(state.wave===3?2:(state.wave===4?1:0))); state.waveToSpawn=9+state.wave*4+Math.floor(state.wave/4)-earlyRelief; state.waveSpawned=0; state.spawnTimer=0; const hint=state.wave<=3?"序盤調整により、配置を組み立てる余裕があります。":"ここからはHard版に近い圧になります。"; setMessage("Wave "+state.wave+" 開始。敵 "+state.waveToSpawn+" 体。"+hint); updateUI(); }
-  function spawnEnemy(){ const p=centerOf(startCell), boss=state.wave%4===0&&state.waveSpawned===state.waveToSpawn-1, fast=!boss&&state.wave>=4&&state.waveSpawned%5===4, armored=!boss&&state.wave>=5&&state.waveSpawned%7===6, regen=!boss&&state.wave>=6&&state.waveSpawned%9===3; const hpFactor=state.wave===1?.78:(state.wave===2?.86:(state.wave===3?.92:(state.wave===4?.97:1))); const speedFactor=state.wave===1?.88:(state.wave===2?.93:(state.wave===3?.97:1)); const baseHp=46*Math.pow(1.26,state.wave-1)*hpFactor; const e={x:p.x,y:p.y,hp:baseHp,maxHp:baseHp,speed:(54+Math.min(54,state.wave*3.0))*speedFactor,radius:10,reward:5+Math.floor(state.wave*.45)+Math.max(0,4-state.wave),path:null,pathIndex:0,slowUntil:0,slowMult:1,armor:0,regen:0,dead:false,kind:"normal"}; if(fast){e.kind="fast";e.speed*=1.65;e.maxHp*=.72;e.hp=e.maxHp;e.radius=8;e.reward+=1;} if(armored){e.kind="armored";e.speed*=.82;e.maxHp*=1.95;e.hp=e.maxHp;e.radius=12;e.reward+=3;e.armor=.28;} if(regen){e.kind="regen";e.speed*=.94;e.maxHp*=1.35;e.hp=e.maxHp;e.radius=11;e.reward+=3;e.regen=2.2+state.wave*.45;} if(boss){e.kind="boss";e.speed*=.76;e.maxHp*=5.5;e.hp=e.maxHp;e.radius=18;e.reward+=22+state.wave*2;e.armor=.18;e.regen=1.0+state.wave*.25;} state.enemies.push(e); }
-  function applyDamage(e,damage,source=null){ if(!e||e.dead) return; const actual=Math.max(1,Math.round(damage*(1-(e.armor||0)))); e.hp-=actual; if(source&&source.slow){e.slowUntil=Math.max(e.slowUntil,state.time+source.slowTime);e.slowMult=source.slow;} if(e.hp<=0&&!e.dead){e.dead=true;state.money+=e.reward;state.score+=e.reward*10+state.wave;} }
+  function placeTower(cell){ const v=canPlace(cell); if(!v.ok){setMessage(v.reason);return false;} const type=TOWER_TYPES[state.selectedType], t={id:cryptoRandomId(),type:type.key,c:cell.c,r:cell.r,level:1,cooldown:0,spent:type.cost}; state.money-=type.cost; state.towers.push(t); state.selectedTower=t; recalcPaths(); setMessage(type.name+"を配置しました。"); sfx.play("place"); updateUI(); return true; }
+  function upgradeSelected(){ const t=state.selectedTower; if(!t) return; if(t.level>=4){setMessage("このタワーは最大レベルです。");return;} const cost=upgradeCost(t); if(state.money<cost){setMessage("強化する資金が足りません。");return;} state.money-=cost; t.spent+=cost; t.level++; setMessage(TOWER_TYPES[t.type].name+"を Lv."+t.level+" に強化しました。"); sfx.play("upgrade"); updateUI(); }
+  function sellSelected(){ const t=state.selectedTower; if(!t) return; state.money+=sellValue(t); state.towers=state.towers.filter(x=>x!==t); state.selectedTower=null; recalcPaths(); setMessage("タワーを売却しました。"); sfx.play("sell"); updateUI(); }
+  function startWave(){ if(state.gameOver) return; if(state.waveActive){setMessage("Wave中です。");return;} state.wave++; state.waveActive=true; const earlyRelief=state.wave===1?5:(state.wave===2?3:(state.wave===3?2:(state.wave===4?1:0))); state.waveToSpawn=9+state.wave*4+Math.floor(state.wave/4)-earlyRelief; state.waveSpawned=0; state.spawnTimer=0; const hint=state.wave>=20?"【警告】リソースが枯渇し、これ以上資金を獲得できません！":(state.wave<=3?"序盤調整により、配置を組み立てる余裕があります。":"ここからはHard版に近い圧になります。"); setMessage("Wave "+state.wave+" 開始。敵 "+state.waveToSpawn+" 体。"+hint); sfx.play("wavestart"); updateUI(); }
+  function spawnEnemy(){ const p=centerOf(startCell), boss=state.wave%4===0&&state.waveSpawned===state.waveToSpawn-1, fast=!boss&&state.wave>=4&&state.waveSpawned%5===4, armored=!boss&&state.wave>=5&&state.waveSpawned%7===6, regen=!boss&&state.wave>=6&&state.waveSpawned%9===3; const hpFactor=state.wave===1?.78:(state.wave===2?.86:(state.wave===3?.92:(state.wave===4?.97:1))); const speedFactor=state.wave===1?.88:(state.wave===2?.93:(state.wave===3?.97:1)); const baseHp=25*Math.pow(1.16,state.wave-1)*hpFactor; const e={x:p.x,y:p.y,hp:baseHp,maxHp:baseHp,speed:(54+Math.min(54,state.wave*3.0))*speedFactor,radius:10,reward:5+Math.floor(state.wave*.45)+Math.max(0,4-state.wave),path:null,pathIndex:0,slowUntil:0,slowMult:1,armor:0,regen:0,dead:false,kind:"normal"}; if(fast){e.kind="fast";e.speed*=1.65;e.maxHp*=.72;e.hp=e.maxHp;e.radius=8;e.reward+=1;} if(armored){e.kind="armored";e.speed*=.82;e.maxHp*=1.95;e.hp=e.maxHp;e.radius=12;e.reward+=3;e.armor=.28;} if(regen){e.kind="regen";e.speed*=.94;e.maxHp*=1.35;e.hp=e.maxHp;e.radius=11;e.reward+=3;e.regen=2.2+state.wave*.45;} if(boss){e.kind="boss";e.speed*=.76;e.maxHp*=5.5;e.hp=e.maxHp;e.radius=18;e.reward+=22+state.wave*2;e.armor=.18;e.regen=1.0+state.wave*.25;} if(state.wave>=20)e.reward=0; state.enemies.push(e); }
+  function applyDamage(e,damage,source=null){ if(!e||e.dead) return; const actual=Math.max(1,Math.round(damage*(1-(e.armor||0)))); e.hp-=actual; if(source&&source.slow){e.slowUntil=Math.max(e.slowUntil,state.time+source.slowTime);e.slowMult=source.slow;} if(e.hp<=0&&!e.dead){e.dead=true;state.money+=e.reward;state.score+=e.reward*10+state.wave; sfx.play("defeat");} }
   function targetForTower(t){ const s=getTowerStats(t), p=centerOf(t), goal=centerOf(goalCell); let best=null,bestScore=Infinity; for(const e of state.enemies){ if(e.dead) continue; const d=Math.hypot(e.x-p.x,e.y-p.y); if(d>s.range) continue; const score=Math.hypot(goal.x-e.x,goal.y-e.y)+d*.05; if(score<bestScore){bestScore=score;best=e;} } return best; }
-  function fireTower(t,target){ const b=TOWER_TYPES[t.type], s=getTowerStats(t), from=centerOf(t); if(s.beam){ applyDamage(target,s.damage,null); state.effects.push({type:"beam",x1:from.x,y1:from.y,x2:target.x,y2:target.y,color:b.color,life:.08,maxLife:.08}); return; } state.projectiles.push({x:from.x,y:from.y,target,damage:s.damage,speed:s.projectileSpeed,splash:s.splash,color:b.color,slow:s.slow,slowTime:s.slowTime,radius:b.splash?5:4}); }
-  function update(dt){ if(state.gameOver||state.paused) return; state.time+=dt; if(state.waveActive){ state.spawnTimer-=dt; const gap=state.wave===1?.84:(state.wave===2?.74:(state.wave===3?.67:Math.max(.18,.64-state.wave*.018))); if(state.waveSpawned<state.waveToSpawn&&state.spawnTimer<=0){spawnEnemy();state.waveSpawned++;state.spawnTimer=gap;} } updateEnemies(dt); updateTowers(dt); updateProjectiles(dt); updateEffects(dt); state.enemies=state.enemies.filter(e=>!e.dead); state.projectiles=state.projectiles.filter(p=>!p.dead); state.effects=state.effects.filter(f=>f.life>0); if(state.waveActive&&state.waveSpawned>=state.waveToSpawn&&state.enemies.length===0){ state.waveActive=false; const bonus=8+state.wave*2+Math.max(0,4-state.wave)*3; state.money+=bonus; setMessage("Wave "+state.wave+" クリア。ボーナス +"+bonus); } if(state.lives<=0&&!state.gameOver){state.gameOver=true;state.lives=0;setMessage("ゲームオーバー。リセットで再挑戦できます。");} updateUI(); }
+  function fireTower(t,target){
+    const b=TOWER_TYPES[t.type], s=getTowerStats(t), from=centerOf(t);
+    sfx.play(t.type);
+    if(s.beam){
+      const dx=target.x-from.x, dy=target.y-from.y;
+      const len=Math.hypot(dx,dy);
+      if(len>0){
+        const ux=dx/len, uy=dy/len;
+        const beamEndX=from.x+ux*s.range, beamEndY=from.y+uy*s.range;
+        state.effects.push({
+          type:"laser_beam",
+          x1:from.x, y1:from.y,
+          x2:beamEndX, y2:beamEndY,
+          color:b.color,
+          width:10,
+          life:.35, maxLife:.35
+        });
+        for(const e of state.enemies){
+          if(e.dead) continue;
+          const ex=e.x-from.x, ey=e.y-from.y;
+          const tProj=ex*ux+ey*uy;
+          if(tProj<0||tProj>s.range) continue;
+          const cx=from.x+ux*tProj, cy=from.y+uy*tProj;
+          const dist=Math.hypot(e.x-cx,e.y-cy);
+          if(dist<=e.radius+8){
+            applyDamage(e,s.damage,null);
+          }
+        }
+      }
+      return;
+    }
+    state.projectiles.push({x:from.x,y:from.y,target,damage:s.damage,speed:s.projectileSpeed,splash:s.splash,color:b.color,slow:s.slow,slowTime:s.slowTime,radius:b.splash?5:4});
+  }
+  function update(dt){ if(state.gameOver||state.paused) return; state.time+=dt; if(state.waveActive){ state.spawnTimer-=dt; const gap=state.wave===1?.84:(state.wave===2?.74:(state.wave===3?.67:Math.max(.18,.64-state.wave*.018))); if(state.waveSpawned<state.waveToSpawn&&state.spawnTimer<=0){spawnEnemy();state.waveSpawned++;state.spawnTimer=gap;} } updateEnemies(dt); updateTowers(dt); updateProjectiles(dt); updateEffects(dt); state.enemies=state.enemies.filter(e=>!e.dead); state.projectiles=state.projectiles.filter(p=>!p.dead); state.effects=state.effects.filter(f=>f.life>0); if(state.waveActive&&state.waveSpawned>=state.waveToSpawn&&state.enemies.length===0){ state.waveActive=false; const bonus=state.wave>=20?0:(8+state.wave*2+Math.max(0,4-state.wave)*3); state.money+=bonus; setMessage("Wave "+state.wave+" クリア。ボーナス +"+bonus); sfx.play("waveclear"); } if(state.lives<=0&&!state.gameOver){state.gameOver=true;state.lives=0;setMessage("ゲームオーバー。リセットで再挑戦できます。"); sfx.play("gameover");} updateUI(); }
   function ensureEnemyPath(e){ if(e.path&&e.pathIndex<e.path.length) return true; const path=findPath(enemyCell(e),goalCell); if(!path||!path.length) return false; e.path=path; e.pathIndex=Math.min(1,path.length-1); return true; }
-  function updateEnemies(dt){ for(const e of state.enemies){ if(e.dead) continue; if(e.regen&&e.hp<e.maxHp) e.hp=Math.min(e.maxHp,e.hp+e.regen*dt); if(!ensureEnemyPath(e)){e.path=[enemyCell(e),goalCell];e.pathIndex=1;} const speed=e.speed*(state.time<e.slowUntil?e.slowMult:1), tc=e.path[e.pathIndex]||goalCell, target=centerOf(tc), dx=target.x-e.x, dy=target.y-e.y, len=Math.hypot(dx,dy); if(len<Math.max(2,speed*dt)){ e.x=target.x;e.y=target.y; if(sameCell(tc,goalCell)){e.dead=true;state.lives-=e.kind==="boss"?5:(e.kind==="armored"?2:1);continue;} e.pathIndex++; if(e.pathIndex>=e.path.length)e.path=null; } else { e.x+=(dx/len)*speed*dt; e.y+=(dy/len)*speed*dt; } } }
+  function updateEnemies(dt){ for(const e of state.enemies){ if(e.dead) continue; if(e.regen&&e.hp<e.maxHp) e.hp=Math.min(e.maxHp,e.hp+e.regen*dt); if(!ensureEnemyPath(e)){e.path=[enemyCell(e),goalCell];e.pathIndex=1;} const speed=e.speed*(state.time<e.slowUntil?e.slowMult:1), tc=e.path[e.pathIndex]||goalCell, target=centerOf(tc), dx=target.x-e.x, dy=target.y-e.y, len=Math.hypot(dx,dy); if(len<Math.max(2,speed*dt)){ e.x=target.x;e.y=target.y; if(sameCell(tc,goalCell)){e.dead=true;state.lives-=e.kind==="boss"?5:(e.kind==="armored"?2:1); sfx.play("hit"); continue;} e.pathIndex++; if(e.pathIndex>=e.path.length)e.path=null; } else { e.x+=(dx/len)*speed*dt; e.y+=(dy/len)*speed*dt; } } }
   function updateTowers(dt){ for(const t of state.towers){ const s=getTowerStats(t); t.cooldown=Math.max(0,t.cooldown-dt); if(t.cooldown>0) continue; const target=targetForTower(t); if(!target) continue; fireTower(t,target); t.cooldown=s.cooldown; } }
   function updateProjectiles(dt){ for(const p of state.projectiles){ if(p.dead) continue; const target=p.target; if(!target||target.dead){p.dead=true;continue;} const dx=target.x-p.x, dy=target.y-p.y, len=Math.hypot(dx,dy), step=p.speed*dt; if(len<=step||len<4){p.x=target.x;p.y=target.y;impactProjectile(p);p.dead=true;} else {p.x+=(dx/len)*step;p.y+=(dy/len)*step;} } }
-  function impactProjectile(p){ if(p.splash>0){ state.effects.push({type:"splash",x:p.x,y:p.y,r:p.splash,color:p.color,life:.18,maxLife:.18}); for(const e of state.enemies){ if(e.dead) continue; const d=Math.hypot(e.x-p.x,e.y-p.y); if(d<=p.splash){ const falloff=.55+.45*(1-d/p.splash); applyDamage(e,Math.round(p.damage*falloff),null); } } } else { applyDamage(p.target,p.damage,p.slow?{slow:p.slow,slowTime:p.slowTime}:null); } }
-  function updateEffects(dt){ for(const f of state.effects) f.life-=dt; }
+  function impactProjectile(p){
+    if(p.splash>0){
+      state.effects.push({type:"splash",x:p.x,y:p.y,r:p.splash,color:p.color,life:.22,maxLife:.22});
+      for(let i=0;i<12;i++){
+        const angle=Math.random()*Math.PI*2;
+        const speed=30+Math.random()*90;
+        state.effects.push({
+          type:"spark",
+          x:p.x,y:p.y,
+          vx:Math.cos(angle)*speed,
+          vy:Math.sin(angle)*speed,
+          color:p.color,
+          size:1.8+Math.random()*2.2,
+          life:0.25+Math.random()*0.2,
+          maxLife:0.45
+        });
+      }
+      for(const e of state.enemies){
+        if(e.dead) continue;
+        const d=Math.hypot(e.x-p.x,e.y-p.y);
+        if(d<=p.splash){
+          const falloff=.55+.45*(1-d/p.splash);
+          applyDamage(e,Math.round(p.damage*falloff),null);
+        }
+      }
+    } else {
+      applyDamage(p.target,p.damage,p.slow?{slow:p.slow,slowTime:p.slowTime}:null);
+    }
+  }
+  function updateEffects(dt){
+    for(const f of state.effects) {
+      f.life-=dt;
+      if(f.type==="spark"){
+        f.x += f.vx * dt;
+        f.y += f.vy * dt;
+        f.vx *= 0.92;
+        f.vy *= 0.92;
+      }
+    }
+  }
   function draw(){ ctx.clearRect(0,0,W,H); drawField(); if(state.showPath) drawPath(); drawEndpoints(); drawTowers(); drawEnemies(); drawProjectiles(); drawEffects(); drawHover(); drawOverlayText(); }
   function drawField(){ ctx.fillStyle="#0f172a"; ctx.fillRect(0,0,W,H); for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){ctx.fillStyle=(c+r)%2===0?"#142034":"#101a2c";ctx.fillRect(c*CELL,r*CELL,CELL,CELL);} ctx.strokeStyle="rgba(148,163,184,.18)";ctx.lineWidth=1; for(let c=0;c<=COLS;c++){ctx.beginPath();ctx.moveTo(c*CELL+.5,0);ctx.lineTo(c*CELL+.5,H);ctx.stroke();} for(let r=0;r<=ROWS;r++){ctx.beginPath();ctx.moveTo(0,r*CELL+.5);ctx.lineTo(W,r*CELL+.5);ctx.stroke();} }
   function drawPath(){ if(!state.globalPath||!state.globalPath.length) return; ctx.save(); ctx.fillStyle="rgba(96,165,250,.14)"; for(const cell of state.globalPath) ctx.fillRect(cell.c*CELL+3,cell.r*CELL+3,CELL-6,CELL-6); ctx.strokeStyle="rgba(147,197,253,.85)";ctx.lineWidth=4;ctx.lineCap="round";ctx.lineJoin="round";ctx.beginPath(); state.globalPath.forEach((cell,i)=>{const p=centerOf(cell); if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);}); ctx.stroke(); ctx.restore(); }
@@ -138,19 +348,81 @@
   function drawTowers(){ for(const t of state.towers){ const b=TOWER_TYPES[t.type], s=getTowerStats(t), p=centerOf(t), selected=state.selectedTower===t; if(selected){ctx.save();ctx.strokeStyle="rgba(96,165,250,.42)";ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,s.range,0,Math.PI*2);ctx.stroke();ctx.restore();} ctx.save();ctx.fillStyle="#020617";ctx.beginPath();ctx.arc(p.x,p.y,15,0,Math.PI*2);ctx.fill();ctx.fillStyle=b.color;ctx.beginPath();ctx.arc(p.x,p.y,12,0,Math.PI*2);ctx.fill();ctx.strokeStyle=selected?"#bfdbfe":"rgba(255,255,255,.55)";ctx.lineWidth=selected?3:2;ctx.stroke();ctx.fillStyle="#fff";ctx.font="bold 10px sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(String(t.level),p.x,p.y+1);ctx.restore(); } }
   function drawEnemies(){ for(const e of state.enemies){ if(e.dead) continue; const slow=state.time<e.slowUntil; let color="#ef4444"; if(e.kind==="fast") color="#facc15"; if(e.kind==="armored") color="#94a3b8"; if(e.kind==="regen") color="#22c55e"; if(e.kind==="boss") color="#d946ef"; ctx.save();ctx.shadowColor="rgba(0,0,0,.4)";ctx.shadowBlur=8;ctx.fillStyle=slow?"#67e8f9":color;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,Math.PI*2);ctx.fill();ctx.strokeStyle="rgba(255,255,255,.65)";ctx.lineWidth=2;ctx.stroke();ctx.shadowBlur=0; const bw=e.radius*2.2,bh=4,hp=clamp(e.hp/e.maxHp,0,1);ctx.fillStyle="rgba(15,23,42,.95)";ctx.fillRect(e.x-bw/2,e.y-e.radius-10,bw,bh);ctx.fillStyle=hp>.5?"#22c55e":(hp>.25?"#facc15":"#fb7185");ctx.fillRect(e.x-bw/2,e.y-e.radius-10,bw*hp,bh);ctx.restore(); } }
   function drawProjectiles(){ for(const p of state.projectiles){ctx.save();ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);ctx.fill();ctx.restore();} }
-  function drawEffects(){ for(const f of state.effects){ const pct=clamp(f.life/f.maxLife,0,1); ctx.save(); if(f.type==="beam"){ctx.globalAlpha=pct;ctx.strokeStyle=f.color;ctx.lineWidth=3;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(f.x1,f.y1);ctx.lineTo(f.x2,f.y2);ctx.stroke();} else if(f.type==="splash"){ctx.globalAlpha=pct*.35;ctx.fillStyle=f.color;ctx.beginPath();ctx.arc(f.x,f.y,f.r*(1.05-pct*.25),0,Math.PI*2);ctx.fill();ctx.globalAlpha=pct;ctx.strokeStyle=f.color;ctx.lineWidth=2;ctx.stroke();} ctx.restore(); } }
+  function drawEffects(){
+    for(const f of state.effects){
+      const pct=clamp(f.life/f.maxLife,0,1);
+      ctx.save();
+      if(f.type==="beam"){
+        ctx.globalAlpha=pct;ctx.strokeStyle=f.color;ctx.lineWidth=3;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(f.x1,f.y1);ctx.lineTo(f.x2,f.y2);ctx.stroke();
+      } else if(f.type==="laser_beam"){
+        ctx.globalAlpha=pct;
+        ctx.strokeStyle="#ffffff";
+        ctx.lineWidth=f.width * pct;
+        ctx.lineCap="round";
+        ctx.shadowColor=f.color;
+        ctx.shadowBlur=12;
+        ctx.beginPath();ctx.moveTo(f.x1,f.y1);ctx.lineTo(f.x2,f.y2);ctx.stroke();
+        ctx.strokeStyle=f.color;
+        ctx.lineWidth=(f.width * 0.5) * pct;
+        ctx.shadowBlur=0;
+        ctx.stroke();
+      } else if(f.type==="splash"){
+        ctx.globalAlpha=pct*.35;ctx.fillStyle=f.color;ctx.beginPath();ctx.arc(f.x,f.y,f.r*(1.05-pct*.25),0,Math.PI*2);ctx.fill();ctx.globalAlpha=pct;ctx.strokeStyle=f.color;ctx.lineWidth=2;ctx.stroke();
+      } else if(f.type==="spark"){
+        ctx.globalAlpha=pct;
+        ctx.fillStyle=f.color;
+        ctx.beginPath();ctx.arc(f.x,f.y,f.size,0,Math.PI*2);ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
   function drawHover(){ const cell=state.hoverCell; if(!cell||!inBounds(cell.c,cell.r)||towerAt(cell.c,cell.r)) return; const type=TOWER_TYPES[state.selectedType], v=canPlace(cell), p=centerOf(cell); ctx.save();ctx.fillStyle=v.ok?"rgba(52,211,153,.25)":"rgba(251,113,133,.25)";ctx.fillRect(cell.c*CELL+2,cell.r*CELL+2,CELL-4,CELL-4);ctx.strokeStyle=v.ok?"rgba(52,211,153,.95)":"rgba(251,113,133,.95)";ctx.lineWidth=2;ctx.strokeRect(cell.c*CELL+3,cell.r*CELL+3,CELL-6,CELL-6);ctx.strokeStyle=v.ok?"rgba(52,211,153,.26)":"rgba(251,113,133,.18)";ctx.beginPath();ctx.arc(p.x,p.y,type.range,0,Math.PI*2);ctx.stroke();ctx.fillStyle=type.color;ctx.globalAlpha=.75;ctx.beginPath();ctx.arc(p.x,p.y,12,0,Math.PI*2);ctx.fill();ctx.restore(); }
   function drawOverlayText(){ if(!state.paused&&!state.gameOver) return; ctx.save();ctx.fillStyle="rgba(2,6,23,.56)";ctx.fillRect(0,0,W,H);ctx.fillStyle="#f8fafc";ctx.font="bold 42px sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(state.gameOver?"GAME OVER":"PAUSED",W/2,H/2-8);ctx.font="16px sans-serif";ctx.fillText(state.gameOver?"リセットで再挑戦":"Space で再開",W/2,H/2+34);ctx.restore(); }
   function setMessage(text){ state.message=text; el.message.textContent=text; }
-  function updateUI(){ el.money.textContent=state.money; el.lives.textContent=state.lives; el.wave.textContent=state.wave; el.score.textContent=state.score; el.startBtn.disabled=state.waveActive||state.gameOver; el.pauseBtn.textContent=state.paused?"再開":"一時停止"; el.speedBtn.textContent="速度 x"+state.gameSpeed; el.pathBtn.textContent="経路表示: "+(state.showPath?"ON":"OFF"); const t=state.selectedTower; el.upgradeBtn.disabled=!t||t.level>=4||state.gameOver; el.sellBtn.disabled=!t||state.gameOver; if(t){ const type=TOWER_TYPES[t.type], s=getTowerStats(t), up=t.level<4?"強化費: "+upgradeCost(t)+" / 次Lvで威力・射程・連射強化":"最大レベル"; el.info.innerHTML=`<b>選択中: ${type.name} Lv.${t.level}</b><br>威力: ${s.damage} / 射程: ${s.range} / 間隔: ${s.cooldown.toFixed(2)}秒<br>${s.splash?"範囲: "+s.splash+"<br>":""}${s.slow?"鈍足: "+Math.round((1-s.slow)*100)+"% / "+s.slowTime.toFixed(1)+"秒<br>":""}${up}<br>売却額: ${sellValue(t)}`; } else { const type=TOWER_TYPES[state.selectedType]; el.info.innerHTML=`<b>配置予定: ${type.name}</b><br>${type.desc}<br>費用: ${type.cost} / 威力: ${type.damage} / 射程: ${type.range}<br>左クリックで配置。既存タワーをクリックすると選択。<br>Balanced Hard版: 序盤緩和。売却は55%、中盤以降の報酬は控えめです。`; } for(const btn of document.querySelectorAll(".towerBtn")){ btn.classList.toggle("selected",btn.dataset.type===state.selectedType&&!state.selectedTower); const type=TOWER_TYPES[btn.dataset.type]; btn.disabled=state.gameOver||state.money<type.cost; } }
+  function updateUI(){
+    el.money.textContent=state.money; el.lives.textContent=state.lives; el.wave.textContent=state.wave; el.score.textContent=state.score; el.startBtn.disabled=state.waveActive||state.gameOver; el.pauseBtn.textContent=state.paused?"再開":"一時停止"; el.speedBtn.textContent="速度 x"+state.gameSpeed; el.volumeBtn.textContent="音量: "+(state.muted?"OFF":"ON"); el.pathBtn.textContent="経路: "+(state.showPath?"ON":"OFF");
+    const t=state.selectedTower;
+    el.upgradeBtn.disabled=!t||t.level>=4||state.gameOver; el.sellBtn.disabled=!t||state.gameOver;
+    if(t){
+      const type=TOWER_TYPES[t.type], s=getTowerStats(t), curDps=(s.damage/s.cooldown).toFixed(1);
+      let upHtml="", btnText="強化";
+      if(t.level<4){
+        const cost=upgradeCost(t);
+        btnText=`強化 (${cost})`;
+        const nextStats=getTowerStats({type:t.type,level:t.level+1});
+        const nextDps=(nextStats.damage/nextStats.cooldown).toFixed(1);
+        const dpsDiff=(nextDps-curDps).toFixed(1);
+        const moneyColor=state.money>=cost?"#fde68a":"#f87171";
+        upHtml=`<div style="margin-top:6px;border-top:1px solid rgba(255,255,255,.1);padding-top:6px;font-size:12px;line-height:1.45;">`+
+               `<b>次 Lv.${t.level+1} への強化</b><br>`+
+               `必要資金: <span style="color:${moneyColor};font-weight:bold;">${cost}</span><br>`+
+               `DPS: ${curDps} ➔ <span style="color:#34d399">${nextDps} (+${dpsDiff})</span><br>`+
+               `威力: ${s.damage} ➔ <span style="color:#34d399">${nextStats.damage} (+${nextStats.damage-s.damage})</span><br>`+
+               `射程: ${s.range} ➔ <span style="color:#34d399">${nextStats.range} (+${nextStats.range-s.range})</span><br>`+
+               `間隔: ${s.cooldown.toFixed(2)}秒 ➔ <span style="color:#34d399">${nextStats.cooldown.toFixed(2)}秒 (${(nextStats.cooldown-s.cooldown).toFixed(2)}秒)</span>`+
+               `</div>`;
+      } else {
+        btnText="強化 (MAX)";
+        upHtml=`<div style="margin-top:6px;border-top:1px solid rgba(255,255,255,.1);padding-top:6px;color:#a78bfa;font-weight:bold;font-size:12px;">最大レベルです。</div>`;
+      }
+      el.upgradeBtn.textContent=btnText;
+      el.info.innerHTML=`<b>選択中: ${type.name} Lv.${t.level}</b><br>DPS: ${curDps} / 威力: ${s.damage} / 射程: ${s.range} / 間隔: ${s.cooldown.toFixed(2)}秒<br>${s.splash?"攻撃範囲: "+s.splash+"px<br>":""}${s.slow?"鈍足効果: "+Math.round((1-s.slow)*100)+"% / "+s.slowTime.toFixed(1)+"秒<br>":""}売却額: <span style="color:#34d399">${sellValue(t)}</span>${upHtml}`;
+    } else {
+      el.upgradeBtn.textContent="強化";
+      const type=TOWER_TYPES[state.selectedType];
+      const s=getTowerStats({type:state.selectedType,level:1});
+      const dps=(s.damage/s.cooldown).toFixed(1);
+      el.info.innerHTML=`<b>配置予定: ${type.name}</b><br><span style="font-size:12px;color:#94a3b8;">${type.desc}</span><br>費用: <span style="color:#fde68a;font-weight:bold;">${type.cost}</span> / DPS: ${dps} / 威力: ${s.damage} / 射程: ${s.range} / 間隔: ${s.cooldown.toFixed(2)}秒<br>${s.splash?"攻撃範囲: "+s.splash+"px<br>":""}${s.slow?"鈍足効果: "+Math.round((1-s.slow)*100)+"% / "+s.slowTime.toFixed(1)+"秒<br>":""}<span style="font-size:11px;color:#64748b;display:block;margin-top:4px;">左クリックで配置。既存タワーをクリックすると選択。</span>`;
+    } for(const btn of document.querySelectorAll(".towerBtn")){ btn.classList.toggle("selected",btn.dataset.type===state.selectedType&&!state.selectedTower); const type=TOWER_TYPES[btn.dataset.type]; btn.disabled=state.gameOver||state.money<type.cost; }
+  }
   function buildTowerButtons(){ el.towerList.innerHTML=""; for(const key of typeOrder){ const t=TOWER_TYPES[key], btn=document.createElement("button"); btn.className="towerBtn";btn.dataset.type=key;btn.innerHTML=`<span class="swatch" style="background:${t.color}"></span><span><b>${t.hotkey}. ${t.name}</b><br><span class="small">${t.desc}</span></span><span class="cost">${t.cost}</span>`; btn.addEventListener("click",()=>{state.selectedType=key;state.selectedTower=null;updateUI();}); el.towerList.appendChild(btn); } }
   function canvasPoint(ev){ const rect=canvas.getBoundingClientRect(); return {x:(ev.clientX-rect.left)*W/rect.width,y:(ev.clientY-rect.top)*H/rect.height}; }
   canvas.addEventListener("mousemove",ev=>{ const p=canvasPoint(ev); state.hoverCell=inBounds(Math.floor(p.x/CELL),Math.floor(p.y/CELL))?cellFromPoint(p.x,p.y):null; });
   canvas.addEventListener("mouseleave",()=>{state.hoverCell=null;});
-  canvas.addEventListener("click",ev=>{ if(state.gameOver) return; const p=canvasPoint(ev), cell=cellFromPoint(p.x,p.y); if(!inBounds(cell.c,cell.r)) return; const existing=towerAt(cell.c,cell.r); if(existing){state.selectedTower=existing;updateUI();return;} state.selectedTower=null; placeTower(cell); });
-  el.startBtn.addEventListener("click",startWave); el.pauseBtn.addEventListener("click",()=>{state.paused=!state.paused;updateUI();}); el.speedBtn.addEventListener("click",()=>{state.gameSpeed=state.gameSpeed===1?2:(state.gameSpeed===2?3:1);updateUI();}); el.pathBtn.addEventListener("click",()=>{state.showPath=!state.showPath;updateUI();}); el.upgradeBtn.addEventListener("click",upgradeSelected); el.sellBtn.addEventListener("click",sellSelected); el.resetBtn.addEventListener("click",resetGame);
-  document.addEventListener("keydown",ev=>{ if(ev.target&&["INPUT","TEXTAREA","SELECT"].includes(ev.target.tagName)) return; if(ev.key>="1"&&ev.key<="4"){ const key=typeOrder[Number(ev.key)-1]; state.selectedType=key; state.selectedTower=null; updateUI(); return; } const k=ev.key.toLowerCase(); if(k==="n") startWave(); if(k==="u") upgradeSelected(); if(k==="s") sellSelected(); if(k==="p"){state.showPath=!state.showPath;updateUI();} if(k==="escape"){state.selectedTower=null;updateUI();} if(ev.code==="Space"){ev.preventDefault();state.paused=!state.paused;updateUI();} });
-  function resetGame(){ state.money=160;state.lives=14;state.score=0;state.wave=0;state.enemies=[];state.towers=[];state.projectiles=[];state.effects=[];state.selectedType="arrow";state.selectedTower=null;state.hoverCell=null;state.paused=false;state.gameSpeed=1;state.waveActive=false;state.waveToSpawn=0;state.waveSpawned=0;state.spawnTimer=0;state.time=0;state.gameOver=false;recalcPaths();setMessage("Balanced Hard版でリセットしました。序盤は配置を試し、Wave 4以降に備えてください。");updateUI(); }
+  canvas.addEventListener("click",ev=>{ if(state.gameOver) return; sfx.init(); const p=canvasPoint(ev), cell=cellFromPoint(p.x,p.y); if(!inBounds(cell.c,cell.r)) return; const existing=towerAt(cell.c,cell.r); if(existing){state.selectedTower=existing;updateUI();return;} state.selectedTower=null; placeTower(cell); });
+  el.startBtn.addEventListener("click",startWave); el.pauseBtn.addEventListener("click",()=>{state.paused=!state.paused;updateUI();}); el.speedBtn.addEventListener("click",()=>{state.gameSpeed=state.gameSpeed===1?2:(state.gameSpeed===2?3:1);updateUI();}); el.volumeBtn.addEventListener("click",()=>{state.muted=!state.muted;sfx.init();updateUI();}); el.pathBtn.addEventListener("click",()=>{state.showPath=!state.showPath;updateUI();}); el.upgradeBtn.addEventListener("click",upgradeSelected); el.sellBtn.addEventListener("click",sellSelected); el.resetBtn.addEventListener("click",resetGame);
+  document.addEventListener("keydown",ev=>{ if(ev.target&&["INPUT","TEXTAREA","SELECT"].includes(ev.target.tagName)) return; sfx.init(); if(ev.key>="1"&&ev.key<="4"){ const key=typeOrder[Number(ev.key)-1]; state.selectedType=key; state.selectedTower=null; updateUI(); return; } const k=ev.key.toLowerCase(); if(k==="n") startWave(); if(k==="u") upgradeSelected(); if(k==="s") sellSelected(); if(k==="p"){state.showPath=!state.showPath;updateUI();} if(k==="escape"){state.selectedTower=null;updateUI();} if(ev.code==="Space"){ev.preventDefault();state.paused=!state.paused;updateUI();} });
+  function resetGame(){ state.money=160;state.lives=14;state.score=0;state.wave=0;state.enemies=[];state.towers=[];state.projectiles=[];state.effects=[];state.selectedType="arrow";state.selectedTower=null;state.hoverCell=null;state.paused=false;state.gameSpeed=1;state.waveActive=false;state.waveToSpawn=0;state.waveSpawned=0;state.spawnTimer=0;state.time=0;state.gameOver=false;recalcPaths();setMessage("ゲームをリセットしました。");updateUI(); }
   let last=performance.now(); function loop(now){ const raw=Math.min(.05,(now-last)/1000); last=now; update(raw*state.gameSpeed); draw(); requestAnimationFrame(loop); }
   buildTowerButtons(); recalcPaths(); updateUI(); requestAnimationFrame(loop);
 })();
