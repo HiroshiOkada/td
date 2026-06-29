@@ -59,6 +59,11 @@
         <button id="startBtn" class="wide">次の Wave</button><button id="pauseBtn">一時停止</button><button id="speedBtn">速度 x1</button><button id="upgradeBtn">強化</button><button id="sellBtn">売却</button><button id="volumeBtn">音量: ON</button><button id="pathBtn">経路: ON</button><button id="resetBtn" class="wide">リセット</button>
       </div>
       <div class="info" id="info"></div><div class="msg" id="message"></div>
+      <!-- ハイスコアランキング表示パネル -->
+      <div class="ranking-panel" id="rankingPanel" style="margin-top:12px; border-top:1px solid rgba(255,255,255,.1); padding-top:10px;">
+        <span class="label" style="font-size:11px; color:var(--muted); margin-bottom:4px; display:block;">ハイスコア (過去1週間)</span>
+        <ol id="rankingList" style="margin:0; padding-left:16px; font-size:12px; color:var(--muted); line-height:1.6;"></ol>
+      </div>
     </aside>
   </div>
   <footer>敵の入口は左、拠点は右。道を完全に塞ぐ配置はできません。装甲敵はダメージを軽減し、再生敵は時間経過で回復します。</footer>
@@ -70,7 +75,7 @@
   const canvas = document.getElementById("gameCanvas"), ctx = canvas.getContext("2d");
   const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
   canvas.width = W * dpr; canvas.height = H * dpr; canvas.style.width = W + "px"; canvas.style.height = H + "px"; ctx.setTransform(dpr,0,0,dpr,0,0);
-  const el = { money:q("money"), lives:q("lives"), wave:q("wave"), score:q("score"), towerList:q("towerList"), startBtn:q("startBtn"), pauseBtn:q("pauseBtn"), speedBtn:q("speedBtn"), volumeBtn:q("volumeBtn"), upgradeBtn:q("upgradeBtn"), sellBtn:q("sellBtn"), pathBtn:q("pathBtn"), resetBtn:q("resetBtn"), info:q("info"), message:q("message") };
+  const el = { money:q("money"), lives:q("lives"), wave:q("wave"), score:q("score"), towerList:q("towerList"), startBtn:q("startBtn"), pauseBtn:q("pauseBtn"), speedBtn:q("speedBtn"), volumeBtn:q("volumeBtn"), upgradeBtn:q("upgradeBtn"), sellBtn:q("sellBtn"), pathBtn:q("pathBtn"), resetBtn:q("resetBtn"), info:q("info"), message:q("message"), rankingList:q("rankingList") };
   function q(id){ return document.getElementById(id); }
 
   class SoundEffects {
@@ -219,7 +224,10 @@
     laser:{key:"laser",hotkey:"4",name:"レーザー",cost:135,range:180,damage:120,cooldown:2.8,beam:true,splash:0,color:"#f43f5e",desc:"一直線上の敵全員を貫通する極太ビーム。発射に時間がかかるが一撃必殺。"}
   };
   const typeOrder = ["arrow","cannon","frost","laser"], startCell={c:0,r:Math.floor(ROWS/2)}, goalCell={c:COLS-1,r:Math.floor(ROWS/2)};
-  const state = { money:160,lives:14,score:0,wave:0,enemies:[],towers:[],projectiles:[],effects:[],selectedType:"arrow",selectedTower:null,hoverCell:null,globalPath:[],showPath:true,paused:false,gameSpeed:1,waveActive:false,waveToSpawn:0,waveSpawned:0,spawnTimer:0,time:0,gameOver:false,message:"ゲームを開始しました。タワーを配置して防衛を開始してください。",muted:false };
+  
+  // scoreSubmitted を state に追加
+  const state = { money:160,lives:14,score:0,wave:0,enemies:[],towers:[],projectiles:[],effects:[],selectedType:"arrow",selectedTower:null,hoverCell:null,globalPath:[],showPath:true,paused:false,gameSpeed:1,waveActive:false,waveToSpawn:0,waveSpawned:0,spawnTimer:0,time:0,gameOver:false,message:"ゲームを開始しました。タワーを配置して防衛を開始してください。",muted:false,scoreSubmitted:false };
+  
   const keyOf=(c,r)=>c+","+r, sameCell=(a,b)=>a.c===b.c&&a.r===b.r, centerOf=cell=>({x:cell.c*CELL+CELL/2,y:cell.r*CELL+CELL/2}), inBounds=(c,r)=>c>=0&&r>=0&&c<COLS&&r<ROWS, clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   function cellFromPoint(x,y){return {c:Math.floor(x/CELL),r:Math.floor(y/CELL)};}
   function towerAt(c,r){return state.towers.find(t=>t.c===c&&t.r===r)||null;}
@@ -231,7 +239,7 @@
     const sk=keyOf(start.c,start.r), gk=keyOf(goal.c,goal.r); g.set(sk,0);
     while(open.length){
       open.sort((a,b)=>a.f-b.f); const cur=open.shift(), ck=keyOf(cur.c,cur.r);
-      if(ck===gk){ const path=[{c:cur.c,r:cur.r}]; let k=ck; while(came.has(k)){ const p=came.get(k); path.push(p); k=keyOf(p.c,p.r); } return path.reverse(); }
+      if(ck===gk){ const path=[{c:cur.c+1,r:cur.r},{c:cur.c,r:cur.r}]; let k=ck; while(came.has(k)){ const p=came.get(k); path.push(p); k=keyOf(p.c,p.r); } return path.reverse(); }
       for(const n of [{c:cur.c+1,r:cur.r},{c:cur.c-1,r:cur.r},{c:cur.c,r:cur.r+1},{c:cur.c,r:cur.r-1}]){
         const nk=keyOf(n.c,n.r), endpoint=nk===sk||nk===gk; if(!endpoint&&isBlocked(n.c,n.r,extra)) continue;
         const tentative=(g.get(ck)??Infinity)+1; if(tentative<(g.get(nk)??Infinity)){ came.set(nk,{c:cur.c,r:cur.r}); g.set(nk,tentative); const f=tentative+heuristic(n,goal); if(!open.some(o=>o.c===n.c&&o.r===n.r)) open.push({c:n.c,r:n.r,f}); }
@@ -296,7 +304,14 @@
     }
     state.projectiles.push({x:from.x,y:from.y,target,damage:s.damage,speed:s.projectileSpeed,splash:s.splash,color:b.color,slow:s.slow,slowTime:s.slowTime,radius:b.splash?5:4});
   }
-  function update(dt){ if(state.gameOver||state.paused) return; state.time+=dt; if(state.waveActive){ state.spawnTimer-=dt; const gap=state.wave===1?.84:(state.wave===2?.74:(state.wave===3?.67:Math.max(.18,.64-state.wave*.018))); if(state.waveSpawned<state.waveToSpawn&&state.spawnTimer<=0){spawnEnemy();state.waveSpawned++;state.spawnTimer=gap;} } updateEnemies(dt); updateTowers(dt); updateProjectiles(dt); updateEffects(dt); state.enemies=state.enemies.filter(e=>!e.dead); state.projectiles=state.projectiles.filter(p=>!p.dead); state.effects=state.effects.filter(f=>f.life>0); if(state.waveActive&&state.waveSpawned>=state.waveToSpawn&&state.enemies.length===0){ state.waveActive=false; const bonus=state.wave>=20?0:(8+state.wave*2+Math.max(0,4-state.wave)*3); state.money+=bonus; setMessage("Wave "+state.wave+" クリア。ボーナス +"+bonus); sfx.play("waveclear"); } if(state.lives<=0&&!state.gameOver){state.gameOver=true;state.lives=0;setMessage("ゲームオーバー。リセットで再挑戦できます。"); sfx.play("gameover");} updateUI(); }
+  function update(dt){ if(state.gameOver||state.paused) return; state.time+=dt; if(state.waveActive){ state.spawnTimer-=dt; const gap=state.wave===1?.84:(state.wave===2?.74:(state.wave===3?.67:Math.max(.18,.64-state.wave*.018))); if(state.waveSpawned<state.waveToSpawn&&state.spawnTimer<=0){spawnEnemy();state.waveSpawned++;state.spawnTimer=gap;} } updateEnemies(dt); updateTowers(dt); updateProjectiles(dt); updateEffects(dt); state.enemies=state.enemies.filter(e=>!e.dead); state.projectiles=state.projectiles.filter(p=>!p.dead); state.effects=state.effects.filter(f=>f.life>0); if(state.waveActive&&state.waveSpawned>=state.waveToSpawn&&state.enemies.length===0){ state.waveActive=false; const bonus=state.wave>=20?0:(8+state.wave*2+Math.max(0,4-state.wave)*3); state.money+=bonus; setMessage("Wave "+state.wave+" クリア。ボーナス +"+bonus); sfx.play("waveclear"); } if(state.lives<=0&&!state.gameOver){
+    state.gameOver=true;
+    state.lives=0;
+    setMessage("ゲームオーバー。リセットで再挑戦できます。");
+    sfx.play("gameover");
+    submitScore(state.score, state.wave); // ゲームオーバー時に自動送信
+  } updateUI(); }
+  
   function ensureEnemyPath(e){ if(e.path&&e.pathIndex<e.path.length) return true; const path=findPath(enemyCell(e),goalCell); if(!path||!path.length) return false; e.path=path; e.pathIndex=Math.min(1,path.length-1); return true; }
   function updateEnemies(dt){ for(const e of state.enemies){ if(e.dead) continue; if(e.regen&&e.hp<e.maxHp) e.hp=Math.min(e.maxHp,e.hp+e.regen*dt); if(!ensureEnemyPath(e)){e.path=[enemyCell(e),goalCell];e.pathIndex=1;} const speed=e.speed*(state.time<e.slowUntil?e.slowMult:1), tc=e.path[e.pathIndex]||goalCell, target=centerOf(tc), dx=target.x-e.x, dy=target.y-e.y, len=Math.hypot(dx,dy); if(len<Math.max(2,speed*dt)){ e.x=target.x;e.y=target.y; if(sameCell(tc,goalCell)){e.dead=true;state.lives-=e.kind==="boss"?5:(e.kind==="armored"?2:1); sfx.play("hit"); continue;} e.pathIndex++; if(e.pathIndex>=e.path.length)e.path=null; } else { e.x+=(dx/len)*speed*dt; e.y+=(dy/len)*speed*dt; } } }
   function updateTowers(dt){ for(const t of state.towers){ const s=getTowerStats(t); t.cooldown=Math.max(0,t.cooldown-dt); if(t.cooldown>0) continue; const target=targetForTower(t); if(!target) continue; fireTower(t,target); t.cooldown=s.cooldown; } }
@@ -422,9 +437,96 @@
   canvas.addEventListener("click",ev=>{ if(state.gameOver) return; sfx.init(); const p=canvasPoint(ev), cell=cellFromPoint(p.x,p.y); if(!inBounds(cell.c,cell.r)) return; const existing=towerAt(cell.c,cell.r); if(existing){state.selectedTower=existing;updateUI();return;} state.selectedTower=null; placeTower(cell); });
   el.startBtn.addEventListener("click",startWave); el.pauseBtn.addEventListener("click",()=>{state.paused=!state.paused;updateUI();}); el.speedBtn.addEventListener("click",()=>{state.gameSpeed=state.gameSpeed===1?2:(state.gameSpeed===2?3:1);updateUI();}); el.volumeBtn.addEventListener("click",()=>{state.muted=!state.muted;sfx.init();updateUI();}); el.pathBtn.addEventListener("click",()=>{state.showPath=!state.showPath;updateUI();}); el.upgradeBtn.addEventListener("click",upgradeSelected); el.sellBtn.addEventListener("click",sellSelected); el.resetBtn.addEventListener("click",resetGame);
   document.addEventListener("keydown",ev=>{ if(ev.target&&["INPUT","TEXTAREA","SELECT"].includes(ev.target.tagName)) return; sfx.init(); if(ev.key>="1"&&ev.key<="4"){ const key=typeOrder[Number(ev.key)-1]; state.selectedType=key; state.selectedTower=null; updateUI(); return; } const k=ev.key.toLowerCase(); if(k==="n") startWave(); if(k==="u") upgradeSelected(); if(k==="s") sellSelected(); if(k==="p"){state.showPath=!state.showPath;updateUI();} if(k==="escape"){state.selectedTower=null;updateUI();} if(ev.code==="Space"){ev.preventDefault();state.paused=!state.paused;updateUI();} });
-  function resetGame(){ state.money=160;state.lives=14;state.score=0;state.wave=0;state.enemies=[];state.towers=[];state.projectiles=[];state.effects=[];state.selectedType="arrow";state.selectedTower=null;state.hoverCell=null;state.paused=false;state.gameSpeed=1;state.waveActive=false;state.waveToSpawn=0;state.waveSpawned=0;state.spawnTimer=0;state.time=0;state.gameOver=false;recalcPaths();setMessage("ゲームをリセットしました。");updateUI(); }
+  
+  function resetGame(){ state.money=160;state.lives=14;state.score=0;state.wave=0;state.enemies=[];state.towers=[];state.projectiles=[];state.effects=[];state.selectedType="arrow";state.selectedTower=null;state.hoverCell=null;state.paused=false;state.gameSpeed=1;state.waveActive=false;state.waveToSpawn=0;state.waveSpawned=0;state.spawnTimer=0;state.time=0;state.gameOver=false;state.scoreSubmitted=false;recalcPaths();setMessage("ゲームをリセットしました。");updateUI();loadHighScores(); }
+  
+  // ハイスコア送信・取得ロジック
+  async function computeHash(score, wave, salt) {
+    const msg = `${score}${wave}${salt}`;
+    const msgBuffer = new TextEncoder().encode(msg);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function submitScore(score, wave) {
+    if (state.scoreSubmitted || score <= 0) return;
+    state.scoreSubmitted = true;
+    try {
+      // 自身の script 要素内のコードを取得し、空白と改行を除いて長さを測定する
+      const scriptContent = document.currentScript ? document.currentScript.textContent : "";
+      const cleanContent = scriptContent.replace(/[ \f\n\r\t\v]/g, "");
+      const salt = "td_secret_salt_2026_" + cleanContent.length;
+      
+      const hash = await computeHash(score, wave, salt);
+      
+      // 相対パス "api/high_scores" を指定し、nginx のサブパス下でも正しく解決できるようにする
+      const response = await fetch("api/high_scores", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ score, wave, hash })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        renderRanking(data);
+        setMessage("ハイスコアが登録されました！");
+      } else {
+        const errData = await response.json();
+        console.error("Score submission failed:", errData.error);
+        setMessage("ハイスコアの送信に失敗しました。");
+      }
+    } catch (e) {
+      console.error("Error submitting score:", e);
+      setMessage("通信エラーによりスコアを登録できませんでした。");
+    }
+  }
+
+  async function loadHighScores() {
+    try {
+      const response = await fetch("api/high_scores");
+      if (response.ok) {
+        const data = await response.json();
+        renderRanking(data);
+      } else {
+        console.error("Failed to load high scores");
+      }
+    } catch (e) {
+      console.error("Error loading high scores:", e);
+    }
+  }
+
+  function formatDate(dateStr) {
+    // SQLiteのTIMESTAMP (UTC) "YYYY-MM-DD HH:MM:SS" をローカル時刻にパース
+    // 空白をTに置き換えて Z を付与することでISOフォーマットにする
+    const isoStr = dateStr.replace(" ", "T") + "Z";
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${mm}/${dd} ${hh}:${min}`;
+  }
+
+  function renderRanking(list) {
+    el.rankingList.innerHTML = "";
+    if (!list || list.length === 0) {
+      el.rankingList.innerHTML = `<li style="list-style:none; margin-left:-16px; color:#64748b;">記録なし</li>`;
+      return;
+    }
+    list.forEach(row => {
+      const li = document.createElement("li");
+      li.innerHTML = `<b style="color:var(--text);">${row.score.toLocaleString()}</b> <span style="font-size:10px; color:#94a3b8;">(Wave ${row.wave})</span> <span style="float:right; font-size:10px; color:#64748b;">${formatDate(row.created_at)}</span>`;
+      el.rankingList.appendChild(li);
+    });
+  }
+
   let last=performance.now(); function loop(now){ const raw=Math.min(.05,(now-last)/1000); last=now; update(raw*state.gameSpeed); draw(); requestAnimationFrame(loop); }
   buildTowerButtons(); recalcPaths(); updateUI(); requestAnimationFrame(loop);
+  loadHighScores(); // 初期読み込み
 })();
 </script>
 </body>
