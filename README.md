@@ -18,31 +18,16 @@ nginx リバースプロキシの裏で動作するように設計されてい�
 
 ## 開発環境のセットアップと起動方法
 
-本プロジェクトでは `uv` を使用して Python 環境を管理します。
+本プロジェクトでは `uv` （`pyproject.toml` / `uv.lock`）を使用して依存関係および仮想環境を管理します。
 
-1. **仮想環境の作成**
+1. **依存パッケージのインストール・環境の同期**
    ```bash
-   uv venv
+   uv sync
    ```
 
-2. **仮想環境の有効化**
-   - **Windows (PowerShell)**:
-     ```powershell
-     .venv\Scripts\activate
-     ```
-   - **Linux / macOS**:
-     ```bash
-     source .venv/bin/activate
-     ```
-
-3. **依存パッケージのインストール**
+2. **ローカルサーバーの起動**
    ```bash
-   uv pip install Flask
-   ```
-
-4. **ローカルサーバーの起動**
-   ```bash
-   python app.py
+   uv run python app.py
    ```
    起動後、ブラウザで `http://127.0.0.1:5000` にアクセスしてください。
 
@@ -51,10 +36,10 @@ nginx リバースプロキシの裏で動作するように設計されてい�
 ### 1. アプリケーションサーバー (Gunicorn 等) の使用
 本番環境では Flask の開発用サーバーではなく、`gunicorn` などの WSGI サーバーを使用してください。
 
-**Gunicorn のインストールと起動例:**
+**Gunicorn の追加と起動例:**
 ```bash
-uv pip install gunicorn
-gunicorn -w 4 -b 127.0.0.1:5000 app:app
+uv add gunicorn
+uv run gunicorn -w 4 -b 127.0.0.1:5000 app:app
 ```
 
 ### 2. Nginx リバースプロキシの設定
