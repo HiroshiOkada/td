@@ -446,12 +446,63 @@
     } for(const btn of document.querySelectorAll(".towerBtn")){ btn.classList.toggle("selected",btn.dataset.type===state.selectedType&&!state.selectedTower); const type=TOWER_TYPES[btn.dataset.type]; btn.disabled=state.gameOver||state.money<type.cost; }
   }
   function buildTowerButtons(){ el.towerList.innerHTML=""; for(const key of typeOrder){ const t=TOWER_TYPES[key], btn=document.createElement("button"); btn.className="towerBtn";btn.dataset.type=key;btn.innerHTML=`<span class="swatch" style="background:${t.color}"></span><span><b>${t.hotkey}. ${t.name}</b><br><span class="small">${t.desc}</span></span><span class="cost">${t.cost}</span>`; btn.addEventListener("click",()=>{state.selectedType=key;state.selectedTower=null;updateUI();}); el.towerList.appendChild(btn); } }
-  function canvasPoint(ev){ const rect=canvas.getBoundingClientRect(); return {x:(ev.clientX-rect.left)*W/rect.width,y:(ev.clientY-rect.top)*H/rect.height}; }
-  canvas.addEventListener("mousemove",ev=>{ const p=canvasPoint(ev); state.hoverCell=inBounds(Math.floor(p.x/CELL),Math.floor(p.y/CELL))?cellFromPoint(p.x,p.y):null; });
-  canvas.addEventListener("mouseleave",()=>{state.hoverCell=null;});
-  canvas.addEventListener("click",ev=>{ if(state.gameOver) return; sfx.init(); const p=canvasPoint(ev), cell=cellFromPoint(p.x,p.y); if(!inBounds(cell.c,cell.r)) return; const existing=towerAt(cell.c,cell.r); if(existing){state.selectedTower=existing;updateUI();return;} state.selectedTower=null; placeTower(cell); });
+  function canvasPoint(ev){
+    const rect=canvas.getBoundingClientRect();
+    let clientX=ev.clientX, clientY=ev.clientY;
+    if(ev.touches && ev.touches.length > 0){
+      clientX = ev.touches[0].clientX;
+      clientY = ev.touches[0].clientY;
+    } else if(ev.changedTouches && ev.changedTouches.length > 0){
+      clientX = ev.changedTouches[0].clientX;
+      clientY = ev.changedTouches[0].clientY;
+    }
+    return {x:(clientX-rect.left)*W/rect.width,y:(clientY-rect.top)*H/rect.height};
+  }
+
+  let pointerDownPos = null;
+  const unlockAudio = () => {
+    sfx.init();
+    if(sfx.ctx && sfx.ctx.state === "suspended") sfx.ctx.resume();
+  };
+  window.addEventListener("pointerdown", unlockAudio, { passive: true });
+  window.addEventListener("touchstart", unlockAudio, { passive: true });
+
+  canvas.addEventListener("pointerdown", ev => {
+    unlockAudio();
+    const p = canvasPoint(ev);
+    pointerDownPos = p;
+    state.hoverCell = inBounds(Math.floor(p.x/CELL), Math.floor(p.y/CELL)) ? cellFromPoint(p.x, p.y) : null;
+  });
+  canvas.addEventListener("pointermove", ev => {
+    const p = canvasPoint(ev);
+    state.hoverCell = inBounds(Math.floor(p.x/CELL), Math.floor(p.y/CELL)) ? cellFromPoint(p.x, p.y) : null;
+  });
+  canvas.addEventListener("pointerleave", () => {
+    state.hoverCell = null;
+    pointerDownPos = null;
+  });
+  canvas.addEventListener("pointerup", ev => {
+    if(state.gameOver) return;
+    unlockAudio();
+    const p = canvasPoint(ev);
+    if(pointerDownPos){
+      const dist = Math.hypot(p.x - pointerDownPos.x, p.y - pointerDownPos.y);
+      if(dist > 14){
+        pointerDownPos = null;
+        return;
+      }
+    }
+    pointerDownPos = null;
+    const cell = cellFromPoint(p.x, p.y);
+    if(!inBounds(cell.c, cell.r)) return;
+    const existing = towerAt(cell.c, cell.r);
+    if(existing){ state.selectedTower = existing; updateUI(); return; }
+    state.selectedTower = null;
+    placeTower(cell);
+  });
+
   el.startBtn.addEventListener("click",startWave); el.pauseBtn.addEventListener("click",()=>{state.paused=!state.paused;updateUI();}); el.speedBtn.addEventListener("click",()=>{state.gameSpeed=state.gameSpeed===1?2:(state.gameSpeed===2?3:1);updateUI();}); el.volumeBtn.addEventListener("click",()=>{state.muted=!state.muted;sfx.init();updateUI();}); el.pathBtn.addEventListener("click",()=>{state.showPath=!state.showPath;updateUI();}); el.upgradeBtn.addEventListener("click",upgradeSelected); el.sellBtn.addEventListener("click",sellSelected); el.resetBtn.addEventListener("click",resetGame);
-  document.addEventListener("keydown",ev=>{ if(ev.target&&["INPUT","TEXTAREA","SELECT"].includes(ev.target.tagName)) return; sfx.init(); if(ev.key>="1"&&ev.key<="4"){ const key=typeOrder[Number(ev.key)-1]; state.selectedType=key; state.selectedTower=null; updateUI(); return; } const k=ev.key.toLowerCase(); if(k==="n") startWave(); if(k==="u") upgradeSelected(); if(k==="s") sellSelected(); if(k==="p"){state.showPath=!state.showPath;updateUI();} if(k==="escape"){state.selectedTower=null;updateUI();} if(ev.code==="Space"){ev.preventDefault();state.paused=!state.paused;updateUI();} });
+  document.addEventListener("keydown",ev=>{ if(ev.target&&["INPUT","TEXTAREA","SELECT"].includes(ev.target.tagName)) return; unlockAudio(); if(ev.key>="1"&&ev.key<="4"){ const key=typeOrder[Number(ev.key)-1]; state.selectedType=key; state.selectedTower=null; updateUI(); return; } const k=ev.key.toLowerCase(); if(k==="n") startWave(); if(k==="u") upgradeSelected(); if(k==="s") sellSelected(); if(k==="p"){state.showPath=!state.showPath;updateUI();} if(k==="escape"){state.selectedTower=null;updateUI();} if(ev.code==="Space"){ev.preventDefault();state.paused=!state.paused;updateUI();} });
   
   function resetGame(){ state.money=160;state.lives=14;state.score=0;state.wave=0;state.enemies=[];state.towers=[];state.projectiles=[];state.effects=[];state.selectedType="arrow";state.selectedTower=null;state.hoverCell=null;state.paused=false;state.gameSpeed=1;state.waveActive=false;state.waveToSpawn=0;state.waveSpawned=0;state.spawnTimer=0;state.time=0;state.gameOver=false;state.scoreSubmitted=false;recalcPaths();setMessage("ゲームをリセットしました。");updateUI();loadHighScores(); }
   
