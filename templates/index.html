@@ -86,6 +86,9 @@
 <script>
 (() => {
   "use strict";
+  // 同期実行中に自身のスクリプト本文を保存する。
+  // ゲームオーバー後の非同期処理では document.currentScript は常に null になる。
+  const ownScriptText = document.currentScript ? document.currentScript.textContent : "";
   const CELL = 32, COLS = 28, ROWS = 18, W = COLS * CELL, H = ROWS * CELL;
   const canvas = document.getElementById("gameCanvas"), ctx = canvas.getContext("2d");
   const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -519,9 +522,8 @@
     if (state.scoreSubmitted || score <= 0) return;
     state.scoreSubmitted = true;
     try {
-      // 自身の script 要素内のコードを取得し、空白と改行を除いて長さを測定する
-      const scriptContent = document.currentScript ? document.currentScript.textContent : "";
-      const cleanContent = scriptContent.replace(/[ \f\n\r\t\v]/g, "");
+      // 読み込み時に保存したスクリプト本文からソルトを計算する
+      const cleanContent = ownScriptText.replace(/[ \f\n\r\t\v]/g, "");
       const salt = "td_secret_salt_2026_" + cleanContent.length;
       
       const hash = await computeHash(score, wave, salt);
